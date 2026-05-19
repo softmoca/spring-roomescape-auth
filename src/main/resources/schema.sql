@@ -1,6 +1,17 @@
 drop table if exists reservation;
 drop table if exists reservation_time;
 drop table if exists theme;
+drop table if exists member;
+
+CREATE TABLE member (
+                        id       BIGINT       NOT NULL AUTO_INCREMENT,
+                        email    VARCHAR(255) NOT NULL,
+                        password VARCHAR(255) NOT NULL,
+                        name     VARCHAR(30)  NOT NULL,
+                        role     VARCHAR(20)  NOT NULL,
+                        PRIMARY KEY (id),
+                        UNIQUE (email)
+);
 
 CREATE TABLE reservation_time (
                                   id       BIGINT       NOT NULL AUTO_INCREMENT,
