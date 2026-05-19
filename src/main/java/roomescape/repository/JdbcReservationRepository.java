@@ -10,6 +10,8 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
+import roomescape.domain.Member;
+import roomescape.domain.MemberRole;
 import roomescape.domain.Reservation;
 import roomescape.domain.ReservationTime;
 import roomescape.domain.Theme;
@@ -20,6 +22,13 @@ public class JdbcReservationRepository implements ReservationRepository {
     private final JdbcTemplate jdbcTemplate;
 
     private static final RowMapper<Reservation> ROW_MAPPER = (rs, rowNum) -> {
+        Member member = Member.reconstitute(
+                rs.getLong("member_id"),
+                rs.getString("member_email"),
+                rs.getString("member_password"),
+                rs.getString("member_name"),
+                MemberRole.valueOf(rs.getString("member_role"))
+        );
         ReservationTime time = ReservationTime.reconstitute(
                 rs.getLong("time_id"),
                 rs.getTime("time_start_at").toLocalTime()
@@ -32,7 +41,7 @@ public class JdbcReservationRepository implements ReservationRepository {
         );
         return Reservation.reconstitute(
                 rs.getLong("reservation_id"),
-                rs.getString("reservation_name"),
+                member,
                 rs.getDate("reservation_date").toLocalDate(),
                 time,
                 theme
@@ -57,6 +66,7 @@ public class JdbcReservationRepository implements ReservationRepository {
                     th.description AS theme_description,
                     th.thumbnail_url AS theme_thumbnail
                 FROM reservation r
+                INNER JOIN member m ON r.member_id = m.id
                 INNER JOIN reservation_time t ON r.time_id = t.id
                 INNER JOIN theme th ON r.theme_id = th.id
                 """;
@@ -66,12 +76,12 @@ public class JdbcReservationRepository implements ReservationRepository {
 
     @Override
     public Reservation save(Reservation reservation) {
-        String sql = "INSERT INTO reservation (name, date, time_id, theme_id) VALUES (?, ?, ?, ?)";
+        String sql = "INSERT INTO reservation (member_id, date, time_id, theme_id) VALUES (?, ?, ?, ?)";
         KeyHolder keyHolder = new GeneratedKeyHolder();
 
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(sql, new String[]{"id"});
-            ps.setString(1, reservation.getName());
+            ps.setLong(1, reservation.getMember().getId());
             ps.setDate(2, Date.valueOf(reservation.getDate()));
             ps.setLong(3, reservation.getTime().getId());
             ps.setLong(4, reservation.getTheme().getId());
@@ -81,7 +91,7 @@ public class JdbcReservationRepository implements ReservationRepository {
         Long id = keyHolder.getKey().longValue();
         return Reservation.reconstitute(
                 id,
-                reservation.getName(),
+                reservation.getMember(),
                 reservation.getDate(),
                 reservation.getTime(),
                 reservation.getTheme()
@@ -119,7 +129,7 @@ public class JdbcReservationRepository implements ReservationRepository {
     }
 
     @Override
-    public List<Reservation> findByNameOrderByDateAscTimeAsc(String name) {
+    public List<Reservation> findByMemberIdOrderByDateAscTimeAsc(Long memberId) {
         String sql = """
                 SELECT
                     r.id AS reservation_id,
@@ -134,11 +144,11 @@ public class JdbcReservationRepository implements ReservationRepository {
                 FROM reservation r
                 INNER JOIN reservation_time t ON r.time_id = t.id
                 INNER JOIN theme th ON r.theme_id = th.id
-                WHERE r.name = ?
+                WHERE r.member_id = ?
                 ORDER BY r.date ASC, t.start_at ASC
                 """;
 
-        return jdbcTemplate.query(sql, ROW_MAPPER, name);
+        return jdbcTemplate.query(sql, ROW_MAPPER, memberId);
     }
 
 

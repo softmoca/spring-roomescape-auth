@@ -7,8 +7,6 @@ import java.time.LocalDate;
 import roomescape.service.dto.ReservationCreateCommand;
 
 public class ReservationRequest {
-    @NotBlank(message = "예약자 이름은 비어 있을 수 없습니다.")
-    private String name;
 
     @NotNull(message = "예약 날짜는 비어 있을 수 없습니다.")
     @JsonFormat(pattern = "yyyy-MM-dd")
@@ -22,13 +20,9 @@ public class ReservationRequest {
 
     public ReservationRequest() {
     }
-
-    public ReservationCreateCommand toCommand() {
-        return new ReservationCreateCommand(name, date, timeId, themeId);
-    }
-
-    public String getName() {
-        return name;
+    // 예약자(memberId)는 요청 본문이 아니라 로그인 세션에서 온다
+    public ReservationCreateCommand toCommand(Long memberId) {
+        return new ReservationCreateCommand(memberId, date, timeId, themeId);
     }
 
     public LocalDate getDate() {

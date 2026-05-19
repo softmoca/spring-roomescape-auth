@@ -13,9 +13,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import roomescape.auth.LoginMember;
 import roomescape.controller.dto.ReservationRequest;
 import roomescape.controller.dto.ReservationResponse;
 import roomescape.controller.dto.ReservationUpdateRequest;
+import roomescape.domain.Member;
 import roomescape.service.ReservationService;
 import roomescape.service.dto.ReservationResult;
 
@@ -31,30 +33,33 @@ public class UserReservationController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ReservationResponse create(@RequestBody @Valid ReservationRequest request) {
-        ReservationResult saved = reservationService.create(request.toCommand());
+    public ReservationResponse create(
+            @LoginMember Member member,
+            @RequestBody @Valid ReservationRequest request) {
+        ReservationResult saved = reservationService.create(request.toCommand(member.getId()));
         return ReservationResponse.from(saved);
     }
 
     @GetMapping
-    public List<ReservationResponse> listByName(@RequestParam String name) {
-        return reservationService.findByName(name).stream()
+    public List<ReservationResponse> listMine(@LoginMember Member member) {
+        return reservationService.findByMemberId(member.getId()).stream()
                 .map(ReservationResponse::from)
                 .toList();
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void cancel(@PathVariable Long id, @RequestParam String name) {
-        reservationService.deleteByOwner(id, name);
+    public void cancel(@PathVariable Long id, @LoginMember Member member) {
+        reservationService.deleteByOwner(id, member.getId());
     }
 
     @PatchMapping("/{id}")
     public ReservationResponse update(
             @PathVariable Long id,
+            @LoginMember Member member,
             @RequestBody @Valid ReservationUpdateRequest request
     ) {
-        ReservationResult updated = reservationService.updateByOwner(request.toCommand(id));
+        ReservationResult updated = reservationService.updateByOwner(request.toCommand(id, member.getId()));
         return ReservationResponse.from(updated);
     }
 

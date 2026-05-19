@@ -20,8 +20,8 @@ public class ReservationUpdateRequest {
     public ReservationUpdateRequest() {
     }
 
-    public ReservationUpdateCommand toCommand(Long id) {
-        return new ReservationUpdateCommand(id, name, date, timeId);
+    public ReservationUpdateCommand toCommand(Long id,Long memberId) {
+        return new ReservationUpdateCommand(id, memberId, date, timeId);
     }
 
     public String getName() {

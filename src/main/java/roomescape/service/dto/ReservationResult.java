@@ -6,20 +6,20 @@ import roomescape.domain.Reservation;
 public class ReservationResult {
 
     private final Long id;
-    private final String name;
+    private final MemberResult member;
     private final LocalDate date;
     private final ReservationTimeResult time;
     private final ThemeResult theme;
 
     public ReservationResult(
             Long id,
-            String name,
+            MemberResult member,
             LocalDate date,
             ReservationTimeResult time,
             ThemeResult theme
     ) {
         this.id = id;
-        this.name = name;
+        this.member=member;
         this.date = date;
         this.time = time;
         this.theme = theme;
@@ -28,7 +28,7 @@ public class ReservationResult {
     public static ReservationResult from(Reservation reservation) {
         return new ReservationResult(
                 reservation.getId(),
-                reservation.getName(),
+                MemberResult.from(reservation.getMember()),
                 reservation.getDate(),
                 ReservationTimeResult.from(reservation.getTime()),
                 ThemeResult.from(reservation.getTheme())
@@ -39,8 +39,8 @@ public class ReservationResult {
         return id;
     }
 
-    public String getName() {
-        return name;
+    public MemberResult getMember() {
+        return member;
     }
 
     public LocalDate getDate() {

@@ -6,7 +6,7 @@ import roomescape.service.dto.ReservationResult;
 
 public class ReservationResponse {
     private final Long id;
-    private final String name;
+    private final MemberResponse member;
 
     @JsonFormat(pattern = "yyyy-MM-dd")
     private final LocalDate date;
@@ -14,10 +14,10 @@ public class ReservationResponse {
     private final ReservationTimeResponse time;
     private final ThemeResponse theme;
 
-    public ReservationResponse(Long id, String name, LocalDate date, ReservationTimeResponse time,
+    public ReservationResponse(Long id, MemberResponse member, LocalDate date, ReservationTimeResponse time,
                                ThemeResponse theme) {
         this.id = id;
-        this.name = name;
+        this.member=member;
         this.date = date;
         this.time = time;
         this.theme = theme;
@@ -26,7 +26,7 @@ public class ReservationResponse {
     public static ReservationResponse from(ReservationResult result) {
         return new ReservationResponse(
                 result.getId(),
-                result.getName(),
+                MemberResponse.from(result.getMember()),
                 result.getDate(),
                 ReservationTimeResponse.from(result.getTime()),
                 ThemeResponse.from(result.getTheme())
@@ -37,8 +37,8 @@ public class ReservationResponse {
         return id;
     }
 
-    public String getName() {
-        return name;
+    public MemberResponse getMember() {
+        return member;
     }
 
     public LocalDate getDate() {
