@@ -32,10 +32,12 @@ public abstract class IntegrationTest {
         jdbcTemplate.execute("DELETE FROM reservation");
         jdbcTemplate.execute("DELETE FROM reservation_time");
         jdbcTemplate.execute("DELETE FROM theme");
+        jdbcTemplate.execute("DELETE FROM member");
 
         // AUTO_INCREMENT 리셋 (테스트가 ID 1부터 시작한다고 가정할 수 있도록)
         jdbcTemplate.execute("ALTER TABLE reservation ALTER COLUMN id RESTART WITH 1");
         jdbcTemplate.execute("ALTER TABLE reservation_time ALTER COLUMN id RESTART WITH 1");
         jdbcTemplate.execute("ALTER TABLE theme ALTER COLUMN id RESTART WITH 1");
+        jdbcTemplate.execute("ALTER TABLE member ALTER COLUMN id RESTART WITH 1");
     }
 }

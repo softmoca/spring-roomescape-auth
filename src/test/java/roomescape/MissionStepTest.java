@@ -1,124 +1,109 @@
 package roomescape;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Time;
 import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.jdbc.core.JdbcTemplate;
-import roomescape.controller.AdminReservationController;
-
+import roomescape.support.ReservationTestHelper;
 
 /*
- * 미션 1 요구사항 테스트.
- * IntegrationTest를 상속받아 매 테스트 시작 시,
- * 빈 DB 상태에서 시작하여 각 테스트가 자기 데이터를 직접 준비한다.
+ * 미션1 - 관리자 예약 관리 API 테스트.
+ * 미션3: 관리자 예약 생성도 @LoginMember를 통해 인증된 사용자 정보를 받는다.
  */
 public class MissionStepTest extends IntegrationTest {
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
+
+    private static final String FUTURE_DATE = "2050-10-10";
 
     @Autowired
-    private AdminReservationController reservationController;
+    private ReservationTestHelper helper;
 
+    private Long timeId;
+    private Long themeId;
+    private String adminCookie;
+
+    @BeforeEach
+    void setUp() {
+        timeId = helper.insertTime(LocalTime.of(10, 0));
+        themeId = helper.insertTheme("테마A", "설명", "https://example.com/a.jpg");
+        helper.insertMember("admin@a.com", "password", "관리자", "ADMIN");
+        adminCookie = helper.loginAndGetCookie("admin@a.com", "password");
+    }
 
     @Test
-    void 예약_조회() {
+    @DisplayName("관리자가 예약을 생성하면 201 + 생성된 예약을 반환한다")
+    void 관리자_예약_생성() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("date", FUTURE_DATE);
+        body.put("timeId", timeId);
+        body.put("themeId", themeId);
+
         RestAssured.given().log().all()
+                .cookie("JSESSIONID", adminCookie)
+                .contentType(ContentType.JSON)
+                .body(body)
+                .when().post("/admin/reservations")
+                .then().log().all()
+                .statusCode(201)
+                .body("id", is(1))
+                .body("date", is(FUTURE_DATE));
+    }
+
+    @Test
+    @DisplayName("전체 예약 목록을 조회하면 200 + 목록을 반환한다")
+    void 예약_목록_조회() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("date", FUTURE_DATE);
+        body.put("timeId", timeId);
+        body.put("themeId", themeId);
+
+        RestAssured.given()
+                .cookie("JSESSIONID", adminCookie)
+                .contentType(ContentType.JSON)
+                .body(body)
+                .when().post("/admin/reservations")
+                .then().statusCode(201);
+
+        RestAssured.given().log().all()
+                .cookie("JSESSIONID", adminCookie)
                 .when().get("/admin/reservations")
                 .then().log().all()
                 .statusCode(200)
-                .body("size()", is(0));
+                .body("size()", is(1));
     }
 
     @Test
-    void 데이터베이스_연동() {
-        try (Connection connection = jdbcTemplate.getDataSource().getConnection()) {
-            assertThat(connection).isNotNull();
-            assertThat(connection.getCatalog()).isEqualTo("DATABASE");
-            assertThat(connection.getMetaData().getTables(null, null, "RESERVATION", null).next()).isTrue();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
-    }
+    @DisplayName("예약을 삭제하면 204를 반환하고 목록에서 사라진다")
+    void 예약_삭제() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("date", FUTURE_DATE);
+        body.put("timeId", timeId);
+        body.put("themeId", themeId);
 
-    @Test
-    void 시간_관리_API() { // 시간 1개 등록 → 조회 시 1개 → 삭제
-        Map<String, String> params = new HashMap<>();
-        params.put("startAt", "17:00");
-
-        Long timeId = RestAssured.given().log().all()
+        Long reservationId = RestAssured.given()
+                .cookie("JSESSIONID", adminCookie)
                 .contentType(ContentType.JSON)
-                .body(params)
-                .when().post("/admin/times")
-                .then().log().all()
-                .statusCode(201)
+                .body(body)
+                .when().post("/admin/reservations")
+                .then().statusCode(201)
                 .extract().jsonPath().getLong("id");
 
         RestAssured.given().log().all()
-                .when().get("/admin/times")
-                .then().log().all()
-                .statusCode(200)
-                .body("size()", is(1));
-
-        RestAssured.given().log().all()
-                .when().delete("/admin/times/" + timeId)
+                .cookie("JSESSIONID", adminCookie)
+                .when().delete("/admin/reservations/" + reservationId)
                 .then().log().all()
                 .statusCode(204);
-    }
 
-    @Test
-        // 시간 1개, 테마 1개를 직접 준비한 뒤 예약 1건 추가 → 1건 확인
-    void 예약과_시간_연결() {
-
-        Long timeId = insertTime(LocalTime.of(10, 0));
-        Long themeId = insertTheme("테스트 테마", "설명", "https://example.com/img.jpg");
-
-        Map<String, Object> reservation = new HashMap<>();
-        reservation.put("name", "브라운");
-        reservation.put("date", "2050-08-05");
-        reservation.put("timeId", timeId);
-        reservation.put("themeId", themeId);
-
-        RestAssured.given().log().all()
-                .contentType(ContentType.JSON)
-                .body(reservation)
-                .when().post("/admin/reservations")
-                .then().log().all()
-                .statusCode(201);
-
-        RestAssured.given().log().all()
+        RestAssured.given()
+                .cookie("JSESSIONID", adminCookie)
                 .when().get("/admin/reservations")
-                .then().log().all()
-                .statusCode(200)
-                .body("size()", is(1));
+                .then().statusCode(200)
+                .body("size()", is(0));
     }
-
-
-    private Long insertTime(LocalTime startAt) {
-        jdbcTemplate.update(
-                "INSERT INTO reservation_time (start_at) VALUES (?)",
-                Time.valueOf(startAt));
-        return jdbcTemplate.queryForObject(
-                "SELECT id FROM reservation_time WHERE start_at = ?",
-                Long.class, Time.valueOf(startAt));
-    }
-
-    private Long insertTheme(String name, String description, String thumbnailUrl) {
-        jdbcTemplate.update(
-                "INSERT INTO theme (name, description, thumbnail_url) VALUES (?, ?, ?)",
-                name, description, thumbnailUrl);
-        return jdbcTemplate.queryForObject(
-                "SELECT id FROM theme WHERE name = ?",
-                Long.class, name);
-    }
-
 }

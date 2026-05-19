@@ -1,9 +1,12 @@
 package roomescape.support;
 
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
 import java.sql.Date;
 import java.sql.Time;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -34,16 +37,37 @@ public class ReservationTestHelper {
                 Long.class, name);
     }
 
-    public void insertReservation(String name, LocalDate date, Long timeId, Long themeId) {
+    // 회원 추가 - 로그인/예약 테스트의 기반 데이터
+    public Long insertMember(String email, String password, String name, String role) {
         jdbcTemplate.update(
-                "INSERT INTO reservation (name, date, time_id, theme_id) VALUES (?, ?, ?, ?)",
-                name, Date.valueOf(date), timeId, themeId);
+                "INSERT INTO member (email, password, name, role) VALUES (?, ?, ?, ?)",
+                email, password, name, role);
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM member WHERE email = ?",
+                Long.class, email);
     }
 
-    public Long insertReservationAndReturnId(String name, LocalDate date, Long timeId, Long themeId) {
-        insertReservation(name, date, timeId, themeId);
+    // 예약 추가 - name이 아니라 memberId 기준
+    public void insertReservation(Long memberId, LocalDate date, Long timeId, Long themeId) {
+        jdbcTemplate.update(
+                "INSERT INTO reservation (member_id, date, time_id, theme_id) VALUES (?, ?, ?, ?)",
+                memberId, Date.valueOf(date), timeId, themeId);
+    }
+
+    public Long insertReservationAndReturnId(Long memberId, LocalDate date, Long timeId, Long themeId) {
+        insertReservation(memberId, date, timeId, themeId);
         return jdbcTemplate.queryForObject(
-                "SELECT id FROM reservation WHERE name = ? AND date = ? AND time_id = ? AND theme_id = ?",
-                Long.class, name, Date.valueOf(date), timeId, themeId);
+                "SELECT id FROM reservation WHERE member_id = ? AND date = ? AND time_id = ? AND theme_id = ?",
+                Long.class, memberId, Date.valueOf(date), timeId, themeId);
+    }
+
+    // 로그인 후 세션 쿠키(JSESSIONID)를 반환 - 이후 요청에 .cookie()로 첨부해 사용
+    public String loginAndGetCookie(String email, String password) {
+        return RestAssured.given()
+                .contentType(ContentType.JSON)
+                .body(Map.of("email", email, "password", password))
+                .when().post("/login")
+                .then().statusCode(200)
+                .extract().cookie("JSESSIONID");
     }
 }

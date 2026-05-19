@@ -9,6 +9,7 @@ import roomescape.domain.ReservationTime;
 import roomescape.domain.Theme;
 import roomescape.domain.policy.ReservationPolicy;
 import roomescape.exception.client.BusinessRuleViolationException;
+import roomescape.exception.client.InvalidCommandException;
 import roomescape.exception.client.ResourceNotFoundException;
 import roomescape.exception.client.UnauthorizedException;
 import roomescape.exception.server.DataInconsistencyException;
@@ -108,12 +109,12 @@ public class ReservationService {
 
     private ReservationTime findTimeOrThrow(Long timeId) {
         return reservationTimeRepository.findById(timeId)
-                .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 시간입니다."));
+                .orElseThrow(() -> new InvalidCommandException("존재하지 않는 예약 시간입니다."));
     }
 
     private Theme findThemeOrThrow(Long themeId) {
         return themeRepository.findById(themeId)
-                .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 테마입니다."));
+                .orElseThrow(() -> new InvalidCommandException("존재하지 않는 예약 테마입니다."));
     }
 
     private Reservation findUpdatedReservationOrThrow(Long id) {
