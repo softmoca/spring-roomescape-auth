@@ -42,16 +42,25 @@
 
 ## 2. 2단계까지의 상태
 
-- 인증은 끝났고, 이제 권한이 필요한 지점:
+- 인증 인프라 (1·2단계 확정) 끝났고, 이제 권한이 필요한 지점:
+    - **웹 인증:** `HttpSession` + 쿠키. `POST /login` → 세션 발급 → `JSESSIONID` 쿠키로 이후 요청 식별.
+    - **모바일 인증:** JWT(HMAC-SHA256) + `Authorization: Bearer` 헤더. `POST /api/login` → 토큰 발급 → 매 요청마다 헤더로 전달.
+    - **공통 추출 구조:** `AuthenticationExtractor` 인터페이스 + `SessionAuthenticationExtractor` / `TokenAuthenticationExtractor` 두 구현체. `LoginCheckInterceptor`와 `LoginMemberArgumentResolver`는 추출기 목록에 위임만 하며 방식을 모른다.
+    - **컨트롤러:** `@LoginMember Member member` 파라미터로 사용자를 받는다. 세션/토큰 어느 방식이든 컨트롤러는 무수정.
+    - **인증 실패 응답:** `UnauthorizedException(401)` → `GlobalExceptionHandler` → `{ "message": "..." }`.
 - 도입해야 할 새 개념:
-    - `Store` 도메인 / `store` 테이블
+    - `Store` 도메인 + `store` 테이블 — 매장 단위 권한 경계
     - `Manager` 또는 `Member.role` 같은 권한 표현
-    - 예약과 매장의 연결 (`Reservation.storeId` 또는 `Theme.storeId`)
-    - `ForbiddenException(403)`
+    - 매니저와 매장의 관계 표현 (`Manager` 별도 도메인 / `Member.storeId` / 매핑 테이블 — 3.2에서 결정) →매니저가 여러 매장을 관리할 수 있도록 열어두기 잠정 선택
+    - 예약과 매장의 연결 (`Reservation.storeId` 직접 / `Theme.storeId` 경유 — 4번에서 결정)
+    - `ForbiddenException(403)` — `RoomeScapeClientException` 상속으로 `GlobalExceptionHandler` 수정 불필요
 - 이 단계에서 손대야 할 파일들 (예상):
-    - 신규: 매장 도메인, 매장 레포지토리, `ForbiddenException`, 인가 판단 객체(선택)
-    - 수정: `Reservation` 또는 `Theme`에 매장 연결 / `ReservationService`의 변경·삭제 메서드
-    - schema.sql 갱신
+    - 신규: `Store` 도메인·레포지토리, `ForbiddenException`, 매니저-매장 관계 표현 클래스
+    - 수정: `Reservation` 또는 `Theme`에 매장 연결 / `ReservationService`의 변경·삭제 메서드에 인가 추가
+    - `schema.sql` 갱신 (store 테이블, reservation 또는 theme에 store_id FK)
+- 이월되는 미결 질문 (2단계에서 결론 못 낸 것)
+    - 모바일 토큰의 즉시 무효화 — 2단계에서 best-effort로 단순화. 블랙리스트/Refresh Token은 4단계로 이월.
+    - JWT 페이로드에 `storeId`나 `role`을 추가할지 — 2단계에서 `memberId`만 담기로 했으나, 3단계 인가에서 매 요청마다 매니저 DB 조회가 발생하면 재검토 가능. → 3.5에서 결정.
 
 ---
 
@@ -110,7 +119,7 @@
 
 ### 3.2 매장 매니저와 매장의 관계 표현 방식
 
-**가이드 질문:** 매니저가 하나의 매장만 / 여러 매장 관리?
+**가이드 질문:** 매니저가 하나의 매장만 / 여러 매장 관리? 매니저가 여러 매장을 관리할 수 있도록 열어두기 잠정 선택
 
 **후보**
 
@@ -201,8 +210,11 @@
 
 **가이드 질문:** 로그인 사용자 ID로 매니저를 조회 / 로그인 객체에 매장 정보 포함?
 
-> 📋 **01에서 미결.** 단, 1단계 3.4(컨트롤러에 사용자 전달)에서 "`Member` 그대로 / `LoginMember` 별도 값 객체"를 결정해둠 → 그 선택이 이 슬롯에 직접 영향.
-**잠정 방향:** **A (로그인 객체에는 ID만, 인가 시점에 매니저 조회).** 단순한 인증 객체 유지 + 매니저 정보 변경 즉시 반영. 단, 매 요청마다 DB 조회 1회 비용.
+> 📋 **01에서 미결. 단, 1단계 구현 결과 확정됨:**
+1단계 3.4에서 **도메인 `Member` 그대로** (`@LoginMember Member member`)를 선택했다.
+`LoginMember(id, email)` 별도 값 객체는 "지금 단계에서는 과한 추상화"로 판단해 채택하지 않았다.
+→ 컨트롤러는 `member.getId()`만 사용하고, 나머지 정보(매장 소속 등)는 인가 시점에 DB 조회로 얻는다. 이 결정이 3.5의 A안(로그인 객체에는 ID만, 인가 시점에 매니저 조회)과 자연스럽게 이어진다.
+재검토 조건: 토큰 클레임에 매장 정보를 넣어 DB 조회를 없애고 싶어질 때 (C안) — 단, 매장 이동 시 토큰 무효화 문제 수반.
 **3단계 구현하며 검증할 것:** A의 DB 조회 비용이 거슬리는 수준인가. 2단계에서 토큰 방식을 도입한다면 C(토큰 클레임에 매장 정보)가 다시 매력적이 될 수 있음 — 단, 매니저 매장 이동 시 토큰 무효화 필요(4단계 학습과 연결).
 >
 
