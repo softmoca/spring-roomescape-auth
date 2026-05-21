@@ -26,8 +26,16 @@ import roomescape.support.ReservationTestHelper;
 import roomescape.support.TestFutureOnlyPolicy;
 
 /*
- * 미션2 사이클2 - 내 예약 관리 API 통합 테스트.
+ * 1단계 — 내 예약 관리 API 통합 테스트.
  * 조회/취소/변경을 본인 검증과 함께 검증한다.
+ *
+ * [1단계 변경]
+ * - ?name= 파라미터 기반 → 로그인 세션 쿠키 기반으로 전환
+ * - 모든 insertReservation("이름", ...) → (memberId, ...)
+ * - setUp()에 insertMember() + login() 추가
+ * - name_누락 → 400 케이스 제거 (name 파라미터 자체가 사라짐)
+ *   대신 비로그인 → 401 케이스로 대체
+ * - 나머지 케이스(이미_지난_예약, 시간_충돌, 존재하지_않는_시간 등)는 쿠키 추가 후 유지
  */
 public class MyReservationStepTest extends IntegrationTest {
 
@@ -53,32 +61,41 @@ public class MyReservationStepTest extends IntegrationTest {
     @Autowired
     private ReservationTestHelper helper;
 
+    private Long brownId;
+    private Long konId;
     private Long timeId10;
     private Long timeId11;
     private Long themeId;
+    private String brownCookie;
+    private String konCookie;
 
     @BeforeEach
     void setUp() {
+        brownId = helper.insertMember("brown@test.com", "pass1", "브라운");
+        konId = helper.insertMember("kon@test.com", "pass2", "콘");
         timeId10 = helper.insertTime(LocalTime.of(10, 0));
         timeId11 = helper.insertTime(LocalTime.of(11, 0));
         themeId = helper.insertTheme("테마A", "설명", "https://example.com/a.jpg");
+        brownCookie = helper.login("brown@test.com", "pass1");
+        konCookie = helper.login("kon@test.com", "pass2");
     }
+
+    // ──────── 내 예약 조회 ────────
 
     @Nested
     @DisplayName("내 예약 조회")
     class MyReservationList {
 
         @Test
-        @DisplayName("내 이름으로 된 예약 목록을 날짜, 시간 순으로 반환한다")
+        @DisplayName("내 예약 목록을 날짜, 시간 순으로 반환한다")
         void 내_예약_조회() {
-            // 브라운 다른 날짜로 2개 예약
-            helper.insertReservation("브라운", FUTURE_DATE_2, timeId10, themeId);
-            helper.insertReservation("브라운", FUTURE_DATE_1, timeId11, themeId);
-            // 다른 사람의 예약 1개 (필터링 검증용)
-            helper.insertReservation("콘", FUTURE_DATE_1, timeId10, themeId);
+            helper.insertReservation(brownId, FUTURE_DATE_2, timeId10, themeId);
+            helper.insertReservation(brownId, FUTURE_DATE_1, timeId11, themeId);
+            helper.insertReservation(konId, FUTURE_DATE_1, timeId10, themeId); // 필터링 검증
 
             ExtractableResponse<Response> response = RestAssured.given().log().all()
-                    .when().get("/user/reservations?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().get("/user/reservations")
                     .then().log().all()
                     .statusCode(200)
                     .body("size()", is(2))
@@ -93,11 +110,12 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("같은 날짜에 여러 예약이 있으면 시간 순으로 정렬된다")
         void 같은_날짜_시간_정렬() {
-            helper.insertReservation("브라운", FUTURE_DATE_1, timeId11, themeId);
-            helper.insertReservation("브라운", FUTURE_DATE_1, timeId10, themeId);
+            helper.insertReservation(brownId, FUTURE_DATE_1, timeId11, themeId);
+            helper.insertReservation(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             ExtractableResponse<Response> response = RestAssured.given()
-                    .when().get("/user/reservations?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().get("/user/reservations")
                     .then().statusCode(200).extract();
 
             List<String> times = response.jsonPath().getList("time.startAt");
@@ -106,25 +124,28 @@ public class MyReservationStepTest extends IntegrationTest {
         }
 
         @Test
-        @DisplayName("해당 이름의 예약이 없으면 빈 배열을 반환한다")
+        @DisplayName("예약이 없으면 빈 배열을 반환한다")
         void 예약_없으면_빈_배열() {
             RestAssured.given().log().all()
-                    .when().get("/user/reservations?name=존재하지않는사람")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().get("/user/reservations")
                     .then().log().all()
                     .statusCode(200)
                     .body("size()", is(0));
         }
 
         @Test
-        @DisplayName("name 파라미터가 누락되면 400을 반환한다")
-        void name_누락() {
+        @DisplayName("비로그인 조회 시도 → 401")
+        void 비로그인_조회_시도() {
             RestAssured.given().log().all()
                     .when().get("/user/reservations")
                     .then().log().all()
-                    .statusCode(400)
-                    .body("message", is("필수 요청 파라미터가 누락되었습니다."));
+                    .statusCode(401)
+                    .body("message", is("로그인이 필요합니다."));
         }
     }
+
+    // ──────── 내 예약 취소 ────────
 
     @Nested
     @DisplayName("내 예약 취소")
@@ -133,15 +154,17 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("본인의 미래 예약을 취소하면 204를 반환하고 실제로 삭제된다")
         void 본인_미래_예약_취소() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             RestAssured.given().log().all()
-                    .when().delete("/user/reservations/" + reservationId + "?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().delete("/user/reservations/" + reservationId)
                     .then().log().all()
                     .statusCode(204);
 
             RestAssured.given()
-                    .when().get("/user/reservations?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().get("/user/reservations")
                     .then().statusCode(200)
                     .body("size()", is(0));
         }
@@ -150,7 +173,8 @@ public class MyReservationStepTest extends IntegrationTest {
         @DisplayName("존재하지 않는 예약 ID로 취소 시도 → 404")
         void 존재하지_않는_예약() {
             RestAssured.given().log().all()
-                    .when().delete("/user/reservations/9999?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().delete("/user/reservations/9999")
                     .then().log().all()
                     .statusCode(404)
                     .body("message", is("존재하지 않는 예약입니다."));
@@ -159,10 +183,11 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("다른 사람의 예약 취소 시도 → 404 (정보 노출 방지)")
         void 다른_사람의_예약() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             RestAssured.given().log().all()
-                    .when().delete("/user/reservations/" + reservationId + "?name=콘")
+                    .cookie("JSESSIONID", konCookie)
+                    .when().delete("/user/reservations/" + reservationId)
                     .then().log().all()
                     .statusCode(404)
                     .body("message", is("존재하지 않는 예약입니다."));
@@ -171,29 +196,30 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("이미 지난 예약 취소 시도 → 400")
         void 이미_지난_예약() {
-            // 고정 Clock 기준 어제 (2026-05-12)
             LocalDate yesterday = TODAY.minusDays(1);
-            Long reservationId = helper.insertReservationAndReturnId("브라운", yesterday, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, yesterday, timeId10, themeId);
 
             RestAssured.given().log().all()
-                    .when().delete("/user/reservations/" + reservationId + "?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().delete("/user/reservations/" + reservationId)
                     .then().log().all()
                     .statusCode(400)
                     .body("message", is("이미 지난 예약은 취소할 수 없습니다."));
         }
 
         @Test
-        @DisplayName("name 파라미터 누락 → 400")
-        void name_누락() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+        @DisplayName("비로그인 취소 시도 → 401")
+        void 비로그인_취소_시도() {
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             RestAssured.given().log().all()
                     .when().delete("/user/reservations/" + reservationId)
                     .then().log().all()
-                    .statusCode(400)
-                    .body("message", is("필수 요청 파라미터가 누락되었습니다."));
+                    .statusCode(401);
         }
     }
+
+    // ──────── 내 예약 변경 ────────
 
     @Nested
     @DisplayName("내 예약 변경")
@@ -202,14 +228,14 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("본인의 미래 예약을 변경하면 200 + 변경된 예약을 반환한다")
         void 본인_미래_예약_변경() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "브라운");
             body.put("date", FUTURE_DATE_2.toString());
             body.put("timeId", timeId11);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/" + reservationId)
@@ -223,14 +249,14 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("같은 시간으로의 변경도 허용된다 (자기 자신과는 충돌하지 않음)")
         void 같은_시간으로_변경_허용() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "브라운");
             body.put("date", FUTURE_DATE_1.toString());
             body.put("timeId", timeId10);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/" + reservationId)
@@ -242,11 +268,11 @@ public class MyReservationStepTest extends IntegrationTest {
         @DisplayName("존재하지 않는 예약 ID → 404")
         void 존재하지_않는_예약() {
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "브라운");
             body.put("date", FUTURE_DATE_1.toString());
             body.put("timeId", timeId10);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/9999")
@@ -256,16 +282,16 @@ public class MyReservationStepTest extends IntegrationTest {
         }
 
         @Test
-        @DisplayName("다른 사람의 예약 변경 시도 → 404")
+        @DisplayName("다른 사람의 예약 변경 시도 → 404 (정보 노출 방지)")
         void 다른_사람의_예약() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "콘");
             body.put("date", FUTURE_DATE_2.toString());
             body.put("timeId", timeId11);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", konCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/" + reservationId)
@@ -278,14 +304,14 @@ public class MyReservationStepTest extends IntegrationTest {
         @DisplayName("이미 지난 예약 변경 시도 → 400")
         void 이미_지난_예약() {
             LocalDate yesterday = TODAY.minusDays(1);
-            Long reservationId = helper.insertReservationAndReturnId("브라운", yesterday, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, yesterday, timeId10, themeId);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "브라운");
             body.put("date", FUTURE_DATE_1.toString());
             body.put("timeId", timeId11);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/" + reservationId)
@@ -297,14 +323,14 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("새 시간이 과거인 변경 시도 → 400")
         void 새_시간이_과거() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "브라운");
             body.put("date", TODAY.minusDays(1).toString());
             body.put("timeId", timeId11);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/" + reservationId)
@@ -316,17 +342,15 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("변경하려는 시간이 다른 사람에 의해 예약됨 → 400")
         void 시간_충돌() {
-            // 같은 테마에 두 예약 (다른 시간)
-            Long myReservation = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
-            helper.insertReservationAndReturnId("콘", FUTURE_DATE_1, timeId11, themeId);
+            Long myReservation = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
+            helper.insertReservation(konId, FUTURE_DATE_1, timeId11, themeId);
 
-            // 브라운이 자기 예약을 콘의 시간으로 변경 시도
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "브라운");
             body.put("date", FUTURE_DATE_1.toString());
             body.put("timeId", timeId11);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/" + myReservation)
@@ -338,14 +362,14 @@ public class MyReservationStepTest extends IntegrationTest {
         @Test
         @DisplayName("존재하지 않는 timeId로 변경 시도 → 404")
         void 존재하지_않는_시간() {
-            Long reservationId = helper.insertReservationAndReturnId("브라운", FUTURE_DATE_1, timeId10, themeId);
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
 
             Map<String, Object> body = new HashMap<>();
-            body.put("name", "브라운");
             body.put("date", FUTURE_DATE_2.toString());
             body.put("timeId", 9999L);
 
             RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(body)
                     .when().patch("/user/reservations/" + reservationId)
@@ -353,23 +377,42 @@ public class MyReservationStepTest extends IntegrationTest {
                     .statusCode(404)
                     .body("message", is("존재하지 않는 시간입니다."));
         }
+
+        @Test
+        @DisplayName("비로그인 변경 시도 → 401")
+        void 비로그인_변경_시도() {
+            Long reservationId = helper.insertReservationAndReturnId(brownId, FUTURE_DATE_1, timeId10, themeId);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("date", FUTURE_DATE_2.toString());
+            body.put("timeId", timeId11);
+
+            RestAssured.given().log().all()
+                    .contentType(ContentType.JSON)
+                    .body(body)
+                    .when().patch("/user/reservations/" + reservationId)
+                    .then().log().all()
+                    .statusCode(401);
+        }
     }
+
+    // ──────── 예약 생애주기 시나리오 ────────
 
     @Nested
     @DisplayName("내 예약 생애주기 시나리오")
     class MyReservationLifecycle {
 
         @Test
-        @DisplayName("예약 → 조회 → 변경 → 조회 → 취소 → 조회 흐름이 자연스럽게 이어진다")
+        @DisplayName("예약 생성 → 조회 → 변경 → 취소 흐름이 자연스럽게 이어진다")
         void 예약_생애주기() {
             // 1) 예약 생성
             Map<String, Object> createBody = new HashMap<>();
-            createBody.put("name", "브라운");
             createBody.put("date", FUTURE_DATE_1.toString());
             createBody.put("timeId", timeId10);
             createBody.put("themeId", themeId);
 
             Long reservationId = RestAssured.given().log().all()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(createBody)
                     .when().post("/user/reservations")
@@ -377,44 +420,45 @@ public class MyReservationStepTest extends IntegrationTest {
                     .statusCode(201)
                     .extract().jsonPath().getLong("id");
 
-            // 2) 조회 → 1건 보임
+            // 2) 조회 → 1건
             RestAssured.given()
-                    .when().get("/user/reservations?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().get("/user/reservations")
                     .then().statusCode(200)
                     .body("size()", is(1))
                     .body("[0].date", is(FUTURE_DATE_1.toString()))
                     .body("[0].time.startAt", is("10:00"));
 
-            // 3) 변경 (date, time)
+            // 3) 변경
             Map<String, Object> updateBody = new HashMap<>();
-            updateBody.put("name", "브라운");
             updateBody.put("date", FUTURE_DATE_2.toString());
             updateBody.put("timeId", timeId11);
 
-            RestAssured.given().log().all()
+            RestAssured.given()
+                    .cookie("JSESSIONID", brownCookie)
                     .contentType(ContentType.JSON)
                     .body(updateBody)
                     .when().patch("/user/reservations/" + reservationId)
-                    .then().log().all()
-                    .statusCode(200);
+                    .then().statusCode(200);
 
-            // 4) 다시 조회 → 변경된 정보로 보임
+            // 4) 다시 조회 → 변경된 정보
             RestAssured.given()
-                    .when().get("/user/reservations?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().get("/user/reservations")
                     .then().statusCode(200)
-                    .body("size()", is(1))
                     .body("[0].date", is(FUTURE_DATE_2.toString()))
                     .body("[0].time.startAt", is("11:00"));
 
             // 5) 취소
-            RestAssured.given().log().all()
-                    .when().delete("/user/reservations/" + reservationId + "?name=브라운")
-                    .then().log().all()
-                    .statusCode(204);
-
-            // 6) 다시 조회 → 빈 목록
             RestAssured.given()
-                    .when().get("/user/reservations?name=브라운")
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().delete("/user/reservations/" + reservationId)
+                    .then().statusCode(204);
+
+            // 6) 빈 목록
+            RestAssured.given()
+                    .cookie("JSESSIONID", brownCookie)
+                    .when().get("/user/reservations")
                     .then().statusCode(200)
                     .body("size()", is(0));
         }

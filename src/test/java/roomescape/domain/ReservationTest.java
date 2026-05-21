@@ -21,6 +21,8 @@ class ReservationTest {
             Theme.reconstitute(1L, "무인도 탈출",
                     "갯벌이 많은 무인도를 탈출하는 흥미진진 대탈출!",
                     "https://picsum.photos/seed/roomescape1/800/600.jpg");
+    private static final Member VALID_MEMBER =
+            Member.reconstitute(1L, "brown@test.com", "password1", "브라운");
 
     private static final ReservationPolicy ALLOW_ALL = new AlwaysAllowPolicy();
 
@@ -28,54 +30,24 @@ class ReservationTest {
     @DisplayName("새 예약을 생성할 수 있다")
     void 새_예약을_생성할_수_있다() {
         assertDoesNotThrow(() ->
-                Reservation.create("브라운", VALID_DATE, VALID_TIME, VALID_THEME, ALLOW_ALL));
+                Reservation.create(VALID_MEMBER, VALID_DATE, VALID_TIME, VALID_THEME, ALLOW_ALL));
     }
 
     @Test
     @DisplayName("DB에서 재구성할 수 있다")
     void DB에서_재구성할_수_있다() {
         assertDoesNotThrow(() ->
-                Reservation.reconstitute(1L, "브라운", VALID_DATE, VALID_TIME, VALID_THEME));
+                Reservation.reconstitute(1L, VALID_MEMBER, VALID_DATE, VALID_TIME, VALID_THEME));
     }
 
-
     @Test
-    @DisplayName("이름이 null이면 예외가 발생한다")
-    void throwWhenNameIsNull() {
+    @DisplayName("회원이 null이면 예외가 발생한다")
+    void 회원이_null이면_예외가_발생한다() {
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
                 () -> Reservation.reconstitute(1L, null, VALID_DATE, VALID_TIME, VALID_THEME)
         );
-        assertEquals("예약자 이름은 비어 있을 수 없습니다.", exception.getMessage());
-    }
-
-    @Test
-    @DisplayName("이름이 빈문자열이면 예외가 발생한다")
-    void 이름이_빈문자열이면_예외가_발생한다() {
-        assertThrows(
-                InvalidDomainException.class,
-                () -> Reservation.reconstitute(1L, "", VALID_DATE, VALID_TIME, VALID_THEME)
-        );
-    }
-
-    @Test
-    @DisplayName("이름이 공백만으로 이루어져 있으면 예외가 발생한다")
-    void 이름이_공백만으로_이루어져_있으면_예외가_발생한다() {
-        assertThrows(
-                InvalidDomainException.class,
-                () -> Reservation.reconstitute(1L, "   ", VALID_DATE, VALID_TIME, VALID_THEME)
-        );
-    }
-
-    @Test
-    @DisplayName("이름이 30자를 초과하면 예외가 발생한다")
-    void 이름이_30자를_초과하면_예외가_발생한다() {
-        String name = "밥".repeat(31);
-        InvalidDomainException exception = assertThrows(
-                InvalidDomainException.class,
-                () -> Reservation.reconstitute(1L, name, VALID_DATE, VALID_TIME, VALID_THEME)
-        );
-        assertEquals("예약자 이름은 30자를 초과할 수 없습니다.", exception.getMessage());
+        assertEquals("예약자 정보는 비어 있을 수 없습니다.", exception.getMessage());
     }
 
     @Test
@@ -83,7 +55,7 @@ class ReservationTest {
     void 날짜가_null이면_예외가_발생한다() {
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
-                () -> Reservation.reconstitute(1L, "브라운", null, VALID_TIME, VALID_THEME)
+                () -> Reservation.reconstitute(1L, VALID_MEMBER, null, VALID_TIME, VALID_THEME)
         );
         assertEquals("예약 날짜는 비어 있을 수 없습니다.", exception.getMessage());
     }
@@ -93,7 +65,7 @@ class ReservationTest {
     void 시간이_null이면_예외가_발생한다() {
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
-                () -> Reservation.reconstitute(1L, "브라운", VALID_DATE, null, VALID_THEME)
+                () -> Reservation.reconstitute(1L, VALID_MEMBER, VALID_DATE, null, VALID_THEME)
         );
         assertEquals("예약 시간은 비어 있을 수 없습니다.", exception.getMessage());
     }
@@ -103,10 +75,8 @@ class ReservationTest {
     void 테마가_null이면_예외가_발생한다() {
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
-                () -> Reservation.reconstitute(1L, "브라운", VALID_DATE, VALID_TIME, null)
+                () -> Reservation.reconstitute(1L, VALID_MEMBER, VALID_DATE, VALID_TIME, null)
         );
         assertEquals("예약 테마는 비어 있을 수 없습니다.", exception.getMessage());
     }
-
-
 }
