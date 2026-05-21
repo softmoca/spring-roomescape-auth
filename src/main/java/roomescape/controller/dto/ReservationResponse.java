@@ -5,8 +5,9 @@ import java.time.LocalDate;
 import roomescape.service.dto.ReservationResult;
 
 public class ReservationResponse {
+
     private final Long id;
-    private final String name;
+    private final String memberName;
 
     @JsonFormat(pattern = "yyyy-MM-dd")
     private final LocalDate date;
@@ -14,10 +15,10 @@ public class ReservationResponse {
     private final ReservationTimeResponse time;
     private final ThemeResponse theme;
 
-    public ReservationResponse(Long id, String name, LocalDate date, ReservationTimeResponse time,
-                               ThemeResponse theme) {
+    public ReservationResponse(Long id, String memberName, LocalDate date,
+                               ReservationTimeResponse time, ThemeResponse theme) {
         this.id = id;
-        this.name = name;
+        this.memberName = memberName;
         this.date = date;
         this.time = time;
         this.theme = theme;
@@ -26,7 +27,7 @@ public class ReservationResponse {
     public static ReservationResponse from(ReservationResult result) {
         return new ReservationResponse(
                 result.getId(),
-                result.getName(),
+                result.getMemberName(),
                 result.getDate(),
                 ReservationTimeResponse.from(result.getTime()),
                 ThemeResponse.from(result.getTheme())
@@ -37,8 +38,8 @@ public class ReservationResponse {
         return id;
     }
 
-    public String getName() {
-        return name;
+    public String getMemberName() {
+        return memberName;
     }
 
     public LocalDate getDate() {

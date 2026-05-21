@@ -11,9 +11,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import roomescape.controller.dto.ReservationRequest;
+import roomescape.controller.dto.AdminReservationRequest;
 import roomescape.controller.dto.ReservationResponse;
 import roomescape.service.ReservationService;
+import roomescape.service.dto.ReservationCreateCommand;
 import roomescape.service.dto.ReservationResult;
 
 @RequestMapping("/admin/reservations")
@@ -26,17 +27,20 @@ public class AdminReservationController {
         this.reservationService = reservationService;
     }
 
-    @GetMapping()
+    @GetMapping
     public List<ReservationResponse> list() {
         return reservationService.findAll().stream()
                 .map(ReservationResponse::from)
                 .toList();
     }
 
-    @PostMapping()
+    @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ReservationResponse create(@RequestBody @Valid ReservationRequest request) {
-        ReservationResult saved = reservationService.create(request.toCommand());
+    public ReservationResponse create(@RequestBody @Valid AdminReservationRequest request) {
+        ReservationCreateCommand command = new ReservationCreateCommand(
+                request.getMemberId(), request.getDate(), request.getTimeId(), request.getThemeId()
+        );
+        ReservationResult saved = reservationService.create(command);
         return ReservationResponse.from(saved);
     }
 

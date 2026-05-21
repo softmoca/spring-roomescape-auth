@@ -5,52 +5,42 @@ import roomescape.domain.exception.InvalidDomainException;
 import roomescape.domain.policy.ReservationPolicy;
 
 public class Reservation {
-    private static final int MAX_NAME_LENGTH = 30;
 
     private final Long id;
-    private final String name;
+    private final Member member;
     private final LocalDate date;
     private final ReservationTime time;
     private final Theme theme;
 
-    private Reservation(Long id, String name, LocalDate date, ReservationTime time, Theme theme) {
-        validate(name, date, time, theme);
+    private Reservation(Long id, Member member, LocalDate date, ReservationTime time, Theme theme) {
+        validateMember(member);
+        validateDate(date);
+        validateTime(time);
+        validateTheme(theme);
         this.id = id;
-        this.name = name;
+        this.member = member;
         this.date = date;
         this.time = time;
         this.theme = theme;
     }
 
-    // 새 예약 생성 (저장 전) - 정책 검증 포함
-    public static Reservation create(String name, LocalDate date,
+    /** 새 예약 생성 (저장 전) — 정책 검증 포함 */
+    public static Reservation create(Member member, LocalDate date,
                                      ReservationTime time, Theme theme,
                                      ReservationPolicy policy) {
         policy.validateCreatable(date, time.getStartAt());
-        return new Reservation(null, name, date, time, theme);
+        return new Reservation(null, member, date, time, theme);
     }
 
-    // DB 재구성 (저장 후) - 불변식 검증만
-    public static Reservation reconstitute(Long id, String name, LocalDate date,
+    /** DB 재구성 (저장 후) — 불변식 검증만 */
+    public static Reservation reconstitute(Long id, Member member, LocalDate date,
                                            ReservationTime time, Theme theme) {
-        return new Reservation(id, name, date, time, theme);
+        return new Reservation(id, member, date, time, theme);
     }
 
-    private static void validate(String name, LocalDate date, ReservationTime time, Theme theme) {
-        validateName(name);
-        validateDate(date);
-        validateTime(time);
-        validateTheme(theme);
-    }
-
-    private static void validateName(String name) {
-        if (name == null || name.isBlank()) {
-            throw new InvalidDomainException("예약자 이름은 비어 있을 수 없습니다.");
-        }
-        if (name.length() > MAX_NAME_LENGTH) {
-            throw new InvalidDomainException(
-                    "예약자 이름은 " + MAX_NAME_LENGTH + "자를 초과할 수 없습니다."
-            );
+    private static void validateMember(Member member) {
+        if (member == null) {
+            throw new InvalidDomainException("예약자 정보는 비어 있을 수 없습니다.");
         }
     }
 
@@ -76,8 +66,8 @@ public class Reservation {
         return id;
     }
 
-    public String getName() {
-        return name;
+    public Member getMember() {
+        return member;
     }
 
     public LocalDate getDate() {

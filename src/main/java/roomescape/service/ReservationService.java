@@ -3,6 +3,7 @@ package roomescape.service;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.stereotype.Service;
+import roomescape.domain.Member;
 import roomescape.domain.Reservation;
 import roomescape.domain.ReservationTime;
 import roomescape.domain.Theme;
@@ -10,6 +11,7 @@ import roomescape.domain.policy.ReservationPolicy;
 import roomescape.exception.client.BusinessRuleViolationException;
 import roomescape.exception.client.ResourceNotFoundException;
 import roomescape.exception.server.DataInconsistencyException;
+import roomescape.repository.MemberRepository;
 import roomescape.repository.ReservationRepository;
 import roomescape.repository.ReservationTimeRepository;
 import roomescape.repository.ThemeRepository;
@@ -23,20 +25,22 @@ public class ReservationService {
     private final ReservationRepository reservationRepository;
     private final ReservationTimeRepository reservationTimeRepository;
     private final ThemeRepository themeRepository;
+    private final MemberRepository memberRepository;
     private final ReservationPolicy reservationPolicy;
 
     public ReservationService(
             ReservationRepository reservationRepository,
             ReservationTimeRepository reservationTimeRepository,
             ThemeRepository themeRepository,
+            MemberRepository memberRepository,
             ReservationPolicy reservationPolicy
     ) {
         this.reservationRepository = reservationRepository;
         this.reservationTimeRepository = reservationTimeRepository;
         this.themeRepository = themeRepository;
+        this.memberRepository = memberRepository;
         this.reservationPolicy = reservationPolicy;
     }
-
 
     public List<ReservationResult> findAll() {
         return reservationRepository.findAll().stream()
@@ -45,45 +49,42 @@ public class ReservationService {
     }
 
     public ReservationResult create(ReservationCreateCommand command) {
+        Member member = findMemberOrThrow(command.getMemberId());
         ReservationTime time = findTimeOrThrow(command.getTimeId());
         Theme theme = findThemeOrThrow(command.getThemeId());
 
         validateNotDuplicated(command.getDate(), time.getId(), theme.getId());
 
-        Reservation reservation = Reservation.create(
-                command.getName(),
-                command.getDate(),
-                time,
-                theme,
-                reservationPolicy// 정책 객체가 과거 검증을 담당
-        );
-
+        Reservation reservation = Reservation.create(member, command.getDate(), time, theme, reservationPolicy);
         Reservation saved = reservationRepository.save(reservation);
         return ReservationResult.from(saved);
     }
 
+    /** 어드민 전용 삭제 — 소유자 검증 없음 */
     public void delete(Long id) {
         reservationRepository.deleteById(id);
     }
 
-    public List<ReservationResult> findByName(String name) {
-        return reservationRepository.findByNameOrderByDateAscTimeAsc(name).stream()
+    /** 사용자 본인 예약 조회 */
+    public List<ReservationResult> findByMember(Long memberId) {
+        return reservationRepository.findByMemberIdOrderByDateAscTimeAsc(memberId).stream()
                 .map(ReservationResult::from)
                 .toList();
     }
 
-    public void deleteByOwner(Long id, String name) {
-        Reservation reservation = findByIdAndName(id, name);
+    /** 사용자 본인 예약 취소 */
+    public void deleteByOwner(Long reservationId, Long memberId) {
+        Reservation reservation = findByIdAndMember(reservationId, memberId);
         reservationPolicy.validateCancellable(
                 reservation.getDate(),
                 reservation.getTime().getStartAt()
         );
-
-        reservationRepository.deleteById(id);
+        reservationRepository.deleteById(reservationId);
     }
 
+    /** 사용자 본인 예약 변경 */
     public ReservationResult updateByOwner(ReservationUpdateCommand command) {
-        Reservation reservation = findByIdAndName(command.getId(), command.getName());
+        Reservation reservation = findByIdAndMember(command.getId(), command.getMemberId());
         reservationPolicy.validateUpdatable(
                 reservation.getDate(),
                 reservation.getTime().getStartAt()
@@ -95,6 +96,13 @@ public class ReservationService {
 
         reservationRepository.updateDateAndTime(command.getId(), command.getDate(), command.getTimeId());
         return ReservationResult.from(findUpdatedReservationOrThrow(command.getId()));
+    }
+
+    // ────── private helpers ──────
+
+    private Member findMemberOrThrow(Long memberId) {
+        return memberRepository.findById(memberId)
+                .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 회원입니다."));
     }
 
     private ReservationTime findTimeOrThrow(Long timeId) {
@@ -114,12 +122,15 @@ public class ReservationService {
                 ));
     }
 
-    private Reservation findByIdAndName(Long id, String name) {
-        return reservationRepository.findById(id)
-                .filter(r -> r.getName().equals(name))
+    /**
+     * 예약 ID로 조회 후 소유자 검증.
+     * 다른 사람의 예약이면 404 — 존재 여부를 노출하지 않음.
+     */
+    private Reservation findByIdAndMember(Long reservationId, Long memberId) {
+        return reservationRepository.findById(reservationId)
+                .filter(r -> r.getMember().getId().equals(memberId))
                 .orElseThrow(() -> new ResourceNotFoundException("존재하지 않는 예약입니다."));
     }
-
 
     private void validateNotDuplicated(LocalDate date, Long timeId, Long themeId) {
         if (reservationRepository.existsByDateAndTimeAndTheme(date, timeId, themeId)) {

@@ -4,23 +4,23 @@ import java.time.LocalDate;
 import roomescape.exception.client.InvalidCommandException;
 
 public class ReservationCreateCommand {
-    private final String name;
+
+    private final Long memberId;
     private final LocalDate date;
     private final Long timeId;
-
     private final Long themeId;
 
-    public ReservationCreateCommand(String name, LocalDate date, Long timeId, Long themeId) {
-        validate(name, date, timeId, themeId);
-        this.name = name;
+    public ReservationCreateCommand(Long memberId, LocalDate date, Long timeId, Long themeId) {
+        validate(memberId, date, timeId, themeId);
+        this.memberId = memberId;
         this.date = date;
         this.timeId = timeId;
         this.themeId = themeId;
     }
 
-    private void validate(String name, LocalDate date, Long timeId, Long themeId) {
-        if (name == null || name.isBlank()) {
-            throw new InvalidCommandException("예약자 이름은 비어 있을 수 없습니다.");
+    private void validate(Long memberId, LocalDate date, Long timeId, Long themeId) {
+        if (memberId == null) {
+            throw new InvalidCommandException("회원 정보는 비어 있을 수 없습니다.");
         }
         if (date == null) {
             throw new InvalidCommandException("예약 날짜는 비어 있을 수 없습니다.");
@@ -33,8 +33,8 @@ public class ReservationCreateCommand {
         }
     }
 
-    public String getName() {
-        return name;
+    public Long getMemberId() {
+        return memberId;
     }
 
     public LocalDate getDate() {

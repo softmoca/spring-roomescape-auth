@@ -16,7 +16,7 @@ public interface ReservationRepository {
 
     boolean existsByTimeId(Long timeId);
 
-    List<Reservation> findByNameOrderByDateAscTimeAsc(String name);
+    List<Reservation> findByMemberIdOrderByDateAscTimeAsc(Long memberId);
 
     Optional<Reservation> findById(Long id);
 
@@ -25,5 +25,4 @@ public interface ReservationRepository {
     void updateDateAndTime(Long id, LocalDate date, Long timeId);
 
     boolean existsByThemeId(Long themeId);
-
 }
