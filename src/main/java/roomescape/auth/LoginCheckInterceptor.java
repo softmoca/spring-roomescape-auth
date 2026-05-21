@@ -3,6 +3,7 @@ package roomescape.auth;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import java.util.List;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
 import roomescape.controller.LoginController;
@@ -17,8 +18,23 @@ import roomescape.exception.client.UnauthorizedException;
  *
  * 주의: response.setStatus(401) + return false 방식은 응답 본문이 비어 사용 안 함.
  *   대신 UnauthorizedException을 던져 GlobalExceptionHandler가 처리하게 한다.
+ *
+ *  [변경점 — 2단계]
+ *  * 기존: session.getAttribute(SESSION_KEY)를 직접 호출.
+ *  * 변경: List<AuthenticationExtractor>에 위임. 어느 추출기도 supports()하지 않으면
+ *  *       UnauthorizedException(401).
+ *  *
+ *  * 새 인증 방식이 생기면 AuthenticationExtractor 구현체만 추가하면 된다.
+ *  * 이 클래스는 손대지 않아도 됨. (OCP)
+ *
  */
 public class LoginCheckInterceptor implements HandlerInterceptor {
+
+    private final List<AuthenticationExtractor> extractors;
+
+    public LoginCheckInterceptor(List<AuthenticationExtractor> extractors) {
+        this.extractors = extractors;
+    }
 
     @Override
     public boolean preHandle(
@@ -37,10 +53,15 @@ public class LoginCheckInterceptor implements HandlerInterceptor {
             return true; // @LoginMember 파라미터 없으면 공개 API
         }
 
-        HttpSession session = request.getSession(false);
-        if (session == null || session.getAttribute(LoginController.SESSION_KEY) == null) {// 세션 자체가 없거나, 세션은 있지만 로그인 정보가 없거나
+        // 어느 추출기든 supports()하는 게 있으면 인증 OK
+        boolean authenticated = extractors.stream()
+                .anyMatch(extractor -> extractor.supports(request));
+
+        if (!authenticated) {
             throw new UnauthorizedException("로그인이 필요합니다.");
         }
+
+
 
         return true;
     }
