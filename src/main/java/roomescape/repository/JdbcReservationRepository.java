@@ -20,6 +20,7 @@ public class JdbcReservationRepository implements ReservationRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
+    // 3단계: th.store_id 추가
     private static final RowMapper<Reservation> ROW_MAPPER = (rs, rowNum) -> {
         Member member = Member.reconstitute(
                 rs.getLong("member_id"),
@@ -33,6 +34,7 @@ public class JdbcReservationRepository implements ReservationRepository {
         );
         Theme theme = Theme.reconstitute(
                 rs.getLong("theme_id"),
+                rs.getLong("theme_store_id"),       // 3단계 추가
                 rs.getString("theme_name"),
                 rs.getString("theme_description"),
                 rs.getString("theme_thumbnail")
@@ -46,6 +48,7 @@ public class JdbcReservationRepository implements ReservationRepository {
         );
     };
 
+    // 3단계: th.store_id AS theme_store_id 추가
     private static final String BASE_SELECT = """
             SELECT
                 r.id        AS reservation_id,
@@ -57,6 +60,7 @@ public class JdbcReservationRepository implements ReservationRepository {
                 t.id        AS time_id,
                 t.start_at  AS time_start_at,
                 th.id       AS theme_id,
+                th.store_id AS theme_store_id,
                 th.name     AS theme_name,
                 th.description  AS theme_description,
                 th.thumbnail_url AS theme_thumbnail
@@ -113,14 +117,19 @@ public class JdbcReservationRepository implements ReservationRepository {
                 )
                 """;
         return Boolean.TRUE.equals(
-                jdbcTemplate.queryForObject(sql, Boolean.class, Date.valueOf(date), timeId, themeId)
-        );
+                jdbcTemplate.queryForObject(sql, Boolean.class, Date.valueOf(date), timeId, themeId));
     }
 
     @Override
     public boolean existsByTimeId(Long timeId) {
         String sql = "SELECT EXISTS (SELECT 1 FROM reservation WHERE time_id = ?)";
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(sql, Boolean.class, timeId));
+    }
+
+    @Override
+    public boolean existsByThemeId(Long themeId) {
+        String sql = "SELECT EXISTS (SELECT 1 FROM reservation WHERE theme_id = ?)";
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(sql, Boolean.class, themeId));
     }
 
     @Override
@@ -145,21 +154,13 @@ public class JdbcReservationRepository implements ReservationRepository {
                 )
                 """;
         return Boolean.TRUE.equals(
-                jdbcTemplate.queryForObject(sql, Boolean.class, Date.valueOf(date), timeId, themeId, excludeId)
-        );
+                jdbcTemplate.queryForObject(sql, Boolean.class, Date.valueOf(date), timeId, themeId, excludeId));
     }
 
     @Override
     public void updateDateAndTime(Long id, LocalDate date, Long timeId) {
         jdbcTemplate.update(
                 "UPDATE reservation SET date = ?, time_id = ? WHERE id = ?",
-                Date.valueOf(date), timeId, id
-        );
-    }
-
-    @Override
-    public boolean existsByThemeId(Long themeId) {
-        String sql = "SELECT EXISTS (SELECT 1 FROM reservation WHERE theme_id = ?)";
-        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(sql, Boolean.class, themeId));
+                Date.valueOf(date), timeId, id);
     }
 }
