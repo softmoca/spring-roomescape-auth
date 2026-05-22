@@ -6,28 +6,36 @@ public class Theme {
 
     private static final int MAX_NAME_LENGTH = 30;
 
-
     private final Long id;
+    private final Long storeId;
     private final String name;
     private final String description;
     private final String thumbnailUrl;
 
-    private Theme(Long id, String name, String description, String thumbnailUrl) {
+    private Theme(Long id, Long storeId, String name, String description, String thumbnailUrl) {
+        validateStoreId(storeId);
         validate(name, description, thumbnailUrl);
         this.id = id;
+        this.storeId = storeId;
         this.name = name;
         this.description = description;
         this.thumbnailUrl = thumbnailUrl;
     }
 
     // 새 테마 생성 (저장 전)
-    public static Theme create(String name, String description, String thumbnailUrl) {
-        return new Theme(null, name, description, thumbnailUrl);
+    public static Theme create(Long storeId, String name, String description, String thumbnailUrl) {
+        return new Theme(null, storeId, name, description, thumbnailUrl);
     }
 
     // DB 재구성 (저장 후)
-    public static Theme reconstitute(Long id, String name, String description, String thumbnailUrl) {
-        return new Theme(id, name, description, thumbnailUrl);
+    public static Theme reconstitute(Long id, Long storeId, String name, String description, String thumbnailUrl) {
+        return new Theme(id, storeId, name, description, thumbnailUrl);
+    }
+
+    private void validateStoreId(Long storeId) {
+        if (storeId == null) {
+            throw new InvalidDomainException("테마의 매장 ID는 비어 있을 수 없습니다.");
+        }
     }
 
     private void validate(String name, String description, String thumbnail) {
@@ -59,12 +67,16 @@ public class Theme {
         }
     }
 
-    public String getName() {
-        return name;
-    }
-
     public Long getId() {
         return id;
+    }
+
+    public Long getStoreId() {
+        return storeId;
+    }
+
+    public String getName() {
+        return name;
     }
 
     public String getDescription() {
@@ -74,5 +86,4 @@ public class Theme {
     public String getThumbnailUrl() {
         return thumbnailUrl;
     }
-
 }
