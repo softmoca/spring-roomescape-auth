@@ -29,7 +29,6 @@ public class ThemeService {
         this.popularThemePolicy = popularThemePolicy;
     }
 
-
     public List<ThemeResult> findAll() {
         return themeRepository.findAll().stream()
                 .map(ThemeResult::from)
@@ -37,7 +36,13 @@ public class ThemeService {
     }
 
     public ThemeResult create(ThemeCreateCommand command) {
-        Theme theme = Theme.create(command.getName(), command.getDescription(), command.getThumbnail());
+        // 3단계: Theme.create에 storeId 전달
+        Theme theme = Theme.create(
+                command.getStoreId(),
+                command.getName(),
+                command.getDescription(),
+                command.getThumbnail()
+        );
         Theme saved = themeRepository.save(theme);
         return ThemeResult.from(saved);
     }
