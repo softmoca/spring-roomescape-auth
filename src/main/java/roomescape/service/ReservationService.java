@@ -107,7 +107,6 @@ public class ReservationService {
     }
 
     // ────── 사용자 인가 메서드 ──────
-
     /** 사용자 본인 예약 조회 */
     public List<ReservationResult> findByMember(Long memberId) {
         return reservationRepository.findByMemberIdOrderByDateAscTimeAsc(memberId).stream()

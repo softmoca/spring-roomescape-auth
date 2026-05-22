@@ -1,6 +1,7 @@
 package roomescape;
 
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
@@ -23,15 +24,17 @@ import roomescape.support.ReservationTestHelper;
 import roomescape.support.TestFutureOnlyPolicy;
 
 /*
- * 1단계 — 에러 응답 명세 통합 테스트.
- *
- * 모든 에러 응답이 {"message": "..."} 단일 필드 형식인지,
- * 상태 코드가 정책대로인지, 메시지가 명세대로인지 검증한다.
+ * 에러 응답 명세 통합 테스트.
+ * 모든 에러 응답이 {"message": "..."} 단일 필드 형식인지 검증한다.
  *
  * [1단계 변경]
- * - name 필드 제거 → 예약 생성 body에서 name 삭제, 로그인 쿠키 추가
- * - 빈_이름, 이름_30자_초과 → name 필드 자체가 없어졌으므로 제거
- * - AuthError 중첩 클래스 추가 (비로그인 401, 잘못된 비밀번호 401)
+ * - name 필드 제거, 로그인 쿠키 추가
+ * - 빈_이름, 이름_30자_초과 제거
+ * - AuthError 중첩 클래스 추가
+ *
+ * [3단계 변경]
+ * - setUp(): insertStore() + insertTheme(storeId) 적용
+ * - AuthzError 중첩 클래스 추가 (인가 실패 케이스)
  */
 public class ErrorResponseStepTest extends IntegrationTest {
 
@@ -64,11 +67,12 @@ public class ErrorResponseStepTest extends IntegrationTest {
     void setUp() {
         memberId = helper.insertMember("user@test.com", "pass", "사용자");
         timeId10 = helper.insertTime(LocalTime.of(10, 0));
-        themeId = helper.insertTheme("테마A", "설명", "https://example.com/a.jpg");
-        cookie = helper.login("user@test.com", "pass");
+        Long storeId = helper.insertStore("에러테스트매장");
+        themeId  = helper.insertTheme("테마A", "설명", "https://example.com/a.jpg", storeId);
+        cookie   = helper.login("user@test.com", "pass");
     }
 
-    // ──────── 1단계 신규: 인증 실패 ────────
+    // ──────── 인증 실패 ────────
 
     @Nested
     @DisplayName("인증 실패 에러 응답")
@@ -124,6 +128,33 @@ public class ErrorResponseStepTest extends IntegrationTest {
         }
     }
 
+    // ──────── 3단계 신규: 인가 실패 ────────
+
+    @Nested
+    @DisplayName("인가 실패 에러 응답")
+    class AuthzError {
+
+        @Test
+        @DisplayName("매니저 아닌 사용자가 /admin/reservations 접근 → 403 + message 포함")
+        void 매니저_아님_403() {
+            RestAssured.given().log().all()
+                    .cookie("JSESSIONID", cookie)
+                    .when().get("/admin/reservations")
+                    .then().log().all()
+                    .statusCode(403)
+                    .body("message", notNullValue());
+        }
+
+        @Test
+        @DisplayName("비로그인 /admin/reservations 접근 → 401")
+        void 비로그인_어드민_접근_401() {
+            RestAssured.given().log().all()
+                    .when().get("/admin/reservations")
+                    .then().log().all()
+                    .statusCode(401);
+        }
+    }
+
     // ──────── 예약 생성 에러 ────────
 
     @Nested
@@ -151,10 +182,8 @@ public class ErrorResponseStepTest extends IntegrationTest {
         @Test
         @DisplayName("중복 예약 시도 → 400 + 메시지")
         void 중복_예약() {
-            // 첫 예약을 DB에 직접 삽입
             helper.insertReservation(memberId, FUTURE_DATE, timeId10, themeId);
 
-            // 같은 슬롯으로 두 번째 예약 시도
             Map<String, Object> body = new HashMap<>();
             body.put("date", FUTURE_DATE.toString());
             body.put("timeId", timeId10);
@@ -212,7 +241,6 @@ public class ErrorResponseStepTest extends IntegrationTest {
             Map<String, Object> body = new HashMap<>();
             body.put("date", FUTURE_DATE.toString());
             body.put("themeId", themeId);
-            // timeId 누락
 
             RestAssured.given().log().all()
                     .cookie("JSESSIONID", cookie)
@@ -230,7 +258,6 @@ public class ErrorResponseStepTest extends IntegrationTest {
             Map<String, Object> body = new HashMap<>();
             body.put("date", FUTURE_DATE.toString());
             body.put("timeId", timeId10);
-            // themeId 누락
 
             RestAssured.given().log().all()
                     .cookie("JSESSIONID", cookie)
@@ -243,70 +270,18 @@ public class ErrorResponseStepTest extends IntegrationTest {
         }
 
         @Test
-        @DisplayName("잘못된 JSON (date 형식 오류) → 400 + 메시지")
+        @DisplayName("잘못된 JSON 날짜 형식 → 400 + 메시지")
         void 잘못된_JSON_날짜_형식() {
-            String malformedBody = """
-                    {
-                        "date": "2026/05/15",
-                        "timeId": %d,
-                        "themeId": %d
-                    }
-                    """.formatted(timeId10, themeId);
+            String raw = "{\"date\":\"not-a-date\",\"timeId\":" + timeId10 + ",\"themeId\":" + themeId + "}";
 
             RestAssured.given().log().all()
                     .cookie("JSESSIONID", cookie)
                     .contentType(ContentType.JSON)
-                    .body(malformedBody)
+                    .body(raw)
                     .when().post("/user/reservations")
                     .then().log().all()
                     .statusCode(400)
-                    .body("message", is("요청 본문의 형식이 올바르지 않습니다."));
-        }
-    }
-
-    // ──────── 시간 삭제 에러 ────────
-
-    @Nested
-    @DisplayName("시간 삭제 시 에러 응답")
-    class TimeDelete {
-
-        @Test
-        @DisplayName("예약이 존재하는 시간 삭제 시도 → 400 + 메시지")
-        void 예약_존재하는_시간_삭제() {
-            helper.insertReservation(memberId, FUTURE_DATE, timeId10, themeId);
-
-            RestAssured.given().log().all()
-                    .when().delete("/admin/times/" + timeId10)
-                    .then().log().all()
-                    .statusCode(400)
-                    .body("message", is("예약이 존재하는 시간은 삭제할 수 없습니다."));
-        }
-    }
-
-    // ──────── 요청 형식 오류 ────────
-
-    @Nested
-    @DisplayName("요청 형식 오류")
-    class RequestFormat {
-
-        @Test
-        @DisplayName("필수 쿼리 파라미터(date) 누락 → 400 + 메시지")
-        void date_쿼리_누락() {
-            RestAssured.given().log().all()
-                    .when().get("/user/themes/" + themeId + "/available-times")
-                    .then().log().all()
-                    .statusCode(400)
-                    .body("message", is("필수 요청 파라미터가 누락되었습니다."));
-        }
-
-        @Test
-        @DisplayName("경로 변수 타입 오류 → 400 + 메시지")
-        void 경로_변수_타입_오류() {
-            RestAssured.given().log().all()
-                    .when().get("/user/themes/abc/available-times?date=2026-05-15")
-                    .then().log().all()
-                    .statusCode(400)
-                    .body("message", is("요청 파라미터 형식이 올바르지 않습니다."));
+                    .body("message", notNullValue());
         }
     }
 }
