@@ -42,11 +42,48 @@
 
 ## 2. 내가 선택한 인증 방식에서의 출발 상태
 
-- 1·2단계에서 선택한 인증 방식:
-- 현재 서버가 "누가 로그인 중인지" 알고 있는가:
-- 미리 추측하는 막힐 지점:
-    - 세션이라면: 같은 계정의 세션이 여러 개 생길 때 어떻게 식별/정리?
-    - 토큰이라면: 이미 발급된 토큰을 어떻게 무효화? 매번 DB 조회하면 stateless가 아닌 것 아닌가?
+> 3단계까지 완료된 시점의 실제 상태. 4단계 시작 전 현황 파악용.
+>
+
+### 현재 인증·인가 구조 요약
+
+**웹 (세션):**
+
+- `POST /login` → `HttpSession`에 `LOGIN_MEMBER_ID: memberId` 저장 → `JSESSIONID` 쿠키 발급
+- 매 요청마다 `SessionAuthenticationExtractor`가 세션에서 `memberId` 추출
+- 로그아웃: `POST /logout` → `session.invalidate()` → 세션 파기
+
+**모바일 (JWT):**
+
+- `POST /api/login` → HS256 서명 JWT 발급 → `Authorization: Bearer {token}` 헤더로 전달
+- 매 요청마다 `TokenAuthenticationExtractor`가 헤더에서 토큰 파싱 → `memberId` 추출
+- 토큰 무효화: **현재 없음** — 2단계에서 best-effort로 단순화, 4단계로 이월
+
+**공통 추출 구조:** `AuthenticationExtractor` 인터페이스 + 두 구현체. `LoginCheckInterceptor`와 `LoginMemberArgumentResolver`는 추출기 목록에 위임만 한다.
+
+**인가 (3단계 추가):**
+
+- `ManagerCheckInterceptor`: `/admin/**` 진입 시 `findByMemberId(memberId)` → 매니저 아니면 403
+- `ReservationService.deleteByManager()`: 예약 조회 후 `manager.canManage(reservation)` → 타 매장이면 403
+
+---
+
+### 동시 로그인 방지 관점에서의 현재 상태
+
+**세션 방식에서 서버가 "누가 로그인 중인지" 알고 있는가?**
+
+절반만 안다. `HttpSession`은 서버 메모리(또는 세션 스토어)에 살아있으므로 원칙상 "지금 살아있는 세션 목록"을 조회할 수 있다. 그러나 현재 구현에는 `memberId → sessionId` 매핑이 없다. 세션에는 `sessionId → memberId` 방향만 있어서, 특정 회원의 기존 세션을 찾아 무효화하는 것이 바로 가능하지 않다.
+
+**토큰 방식에서 서버가 "누가 로그인 중인지" 알고 있는가?**
+
+전혀 모른다. JWT는 발급하면 끝이다. 서버는 어떤 토큰이 현재 유효한지 추적하지 않는다. 토큰 자체가 유효 기간 내에 있으면 서버는 무조건 믿는다. 기존 토큰을 무효화할 방법이 현재 구조에 없다.
+
+**미리 추측하는 막힐 지점:**
+
+- **세션이라면:** 새 로그인 시 `memberId`로 기존 세션을 찾아야 하는데, 현재 `LoginCheckInterceptor`는 `sessionId → memberId` 방향만 알고 있다. `memberId → sessionId` 역방향 조회를 위한 별도 저장소(Map, DB, Redis)가 필요하다. 서버가 여러 대이면 인메모리 Map으로는 불가능하다.
+- **토큰이라면:** 이미 발급된 토큰을 무효화하려면 서버가 "어떤 토큰이 유효한지"를 추적해야 한다. 블랙리스트 또는 `active_token` 테이블 방식 모두 매 요청마다 DB 조회가 필요하다. 이 순간 JWT의 stateless 특성이 깨진다. "stateless이기 때문에 JWT를 쓴다"는 전제가 흔들린다.
+- **두 방식 공존 (현재 상태):** 웹(세션)과 모바일(JWT)이 동시에 운영 중이다. 같은 계정으로 웹 세션 1개 + 모바일 토큰 N개가 동시에 존재할 수 있다. 동시 로그인 방지 정책을 세션과 토큰에 각각 다르게 적용해야 하는가, 아니면 회원 단위로 통합해서 관리해야 하는가? 이 질문이 4단계의 핵심 어려움이 될 것 같다.
+- **3단계 인가와의 연결:** `ManagerCheckInterceptor`는 매 요청마다 `managerRepository.findByMemberId()`를 호출한다. 동시 로그인 방지를 위해 `active_session` DB 조회까지 추가되면 `/admin/**` 요청 1건당 DB 조회가 최소 3회(Manager 조회 × 2 + 세션 유효성 조회)가 된다. 이 비용이 허용 가능한가를 4단계에서 고민해야 한다.
 
 ---
 
