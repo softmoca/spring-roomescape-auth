@@ -65,7 +65,14 @@ public class PopularThemeStepTest extends IntegrationTest {
     private Long islandThemeId;
     private Long cityThemeId;
     private Long balloonThemeId;
+    private Long storeId;
 
+    // ── 3단계 변경: setUp의 insertTheme 부분만 교체 ──
+    // 기존:
+    //   islandThemeId = helper.insertTheme("무인도 탈출", "...", "https://example.com/island.jpg");
+    //   cityThemeId   = helper.insertTheme("도시 탈출",   "...", "https://example.com/city.jpg");
+    //   balloonThemeId= helper.insertTheme("열기구 탈출", "...", "https://example.com/balloon.jpg");
+    //
     @BeforeEach
     void setUp() {
         // 집계 테스트용 회원 1명 — 누가 예약했는지는 집계와 무관
@@ -81,10 +88,12 @@ public class PopularThemeStepTest extends IntegrationTest {
         Long time7 = helper.insertTime(LocalTime.of(16, 0));
         Long time8 = helper.insertTime(LocalTime.of(17, 0));
 
-        // 핵심 테마 3개
-        islandThemeId = helper.insertTheme("무인도 탈출", "...", "https://example.com/island.jpg");
-        cityThemeId = helper.insertTheme("도시 탈출", "...", "https://example.com/city.jpg");
-        balloonThemeId = helper.insertTheme("열기구 탈출", "...", "https://example.com/balloon.jpg");
+        // 3단계: storeId 추가 — 인기 테마 집계는 매장 구분과 무관하므로 한 매장으로 통일
+        storeId       = helper.insertStore("인기테마테스트매장");
+        Long storeId = helper.insertStore("테스트매장");
+        islandThemeId  = helper.insertTheme("무인도 탈출", "...", "https://example.com/island.jpg",  storeId);
+        cityThemeId    = helper.insertTheme("도시 탈출",   "...", "https://example.com/city.jpg",    storeId);
+        balloonThemeId = helper.insertTheme("열기구 탈출", "...", "https://example.com/balloon.jpg", storeId);
 
         LocalDate yesterday = TODAY.minusDays(1);
         LocalDate fiveDaysAgo = TODAY.minusDays(5);
@@ -182,7 +191,7 @@ public class PopularThemeStepTest extends IntegrationTest {
     @Test
     @DisplayName("예약이 없는 테마는 결과에 포함되지 않는다")
     void 예약_없는_테마_제외() {
-        helper.insertTheme("예약없는테마", "설명", "https://example.com/empty.jpg");
+        helper.insertTheme("예약없는테마", "설명", "https://example.com/empty.jpg",storeId);
 
         ExtractableResponse<Response> response = RestAssured.given()
                 .when().get("/user/themes/popular")

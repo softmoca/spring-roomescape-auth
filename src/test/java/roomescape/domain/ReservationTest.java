@@ -12,13 +12,17 @@ import roomescape.domain.exception.InvalidDomainException;
 import roomescape.domain.policy.ReservationPolicy;
 import roomescape.support.AlwaysAllowPolicy;
 
+/*
+ * [3단계 변경]
+ * - VALID_THEME: Theme.reconstitute에 storeId(1L) 추가
+ */
 class ReservationTest {
 
     private static final ReservationTime VALID_TIME =
             ReservationTime.reconstitute(1L, LocalTime.of(10, 0));
     private static final LocalDate VALID_DATE = LocalDate.of(2026, 1, 1);
     private static final Theme VALID_THEME =
-            Theme.reconstitute(1L, "무인도 탈출",
+            Theme.reconstitute(1L, 1L, "무인도 탈출",           // 3단계: storeId=1L 추가
                     "갯벌이 많은 무인도를 탈출하는 흥미진진 대탈출!",
                     "https://picsum.photos/seed/roomescape1/800/600.jpg");
     private static final Member VALID_MEMBER =

@@ -28,6 +28,21 @@ import roomescape.support.ReservationTestHelper;
  * - 예약 생성 응답 검증: "name" → "memberName"
  * - 같은_시간_다른_테마 테스트도 동일하게 쿠키 기반으로 수정
  */
+
+/*
+ * 사용자 예약 API 요구사항 테스트.
+ * IntegrationTest 상속으로 매 테스트 빈 DB 보장.
+ * 미래 날짜를 사용하므로 시계 통제는 불필요.
+ *
+ * [1단계 변경]
+ * - setUp()에 insertMember() + login() 추가
+ * - 예약 생성 body: name 제거, 로그인 쿠키 추가
+ * - 예약 생성 응답 검증: "name" → "memberName"
+ *  * - 같은_시간_다른_테마 테스트도 동일하게 쿠키 기반으로 수정
+ *
+ * [3단계 변경]
+ * - setUp(): insertStore() + insertTheme(storeId) 적용
+ */
 public class UserReservationStepTest extends IntegrationTest {
 
     private static final String FUTURE_DATE = "2050-12-31";
@@ -46,10 +61,12 @@ public class UserReservationStepTest extends IntegrationTest {
         helper.insertMember("brown@test.com", "pass1", "브라운");
         helper.insertMember("kon@test.com", "pass2", "콘");
         timeId = helper.insertTime(LocalTime.of(10, 0));
-        themeIdA = helper.insertTheme("테마A", "설명A", "https://example.com/a.jpg");
-        themeIdB = helper.insertTheme("테마B", "설명B", "https://example.com/b.jpg");
+        // 3단계: insertStore + insertTheme(storeId)
+        Long storeId = helper.insertStore("사용자테스트매장");
+        themeIdA = helper.insertTheme("테마A", "설명A", "https://example.com/a.jpg", storeId);
+        themeIdB = helper.insertTheme("테마B", "설명B", "https://example.com/b.jpg", storeId);
         brownCookie = helper.login("brown@test.com", "pass1");
-        konCookie = helper.login("kon@test.com", "pass2");
+        konCookie   = helper.login("kon@test.com",   "pass2");
     }
 
     @Test
@@ -62,7 +79,7 @@ public class UserReservationStepTest extends IntegrationTest {
                 .statusCode(200)
                 .body("size()", is(1));
 
-        // 2) 10:00으로 예약 생성 (name 없음, 쿠키로 식별)
+        // 2) 10:00으로 예약 생성 (쿠키로 식별)
         Map<String, Object> reservationBody = new HashMap<>();
         reservationBody.put("date", FUTURE_DATE);
         reservationBody.put("timeId", timeId);
@@ -80,7 +97,7 @@ public class UserReservationStepTest extends IntegrationTest {
                 .body("time.id", is(timeId.intValue()))
                 .body("theme.id", is(themeIdA.intValue()));
 
-        // 3) 같은 날짜 + 테마A 가능 시간 조회 → 0개 (10:00이 빠져 있어야 함)
+        // 3) 같은 날짜 + 테마A 가능 시간 조회 → 0개
         ExtractableResponse<Response> afterReservation = RestAssured.given().log().all()
                 .when().get("/user/themes/" + themeIdA + "/available-times?date=" + FUTURE_DATE)
                 .then().log().all()
@@ -95,7 +112,7 @@ public class UserReservationStepTest extends IntegrationTest {
     @Test
     @DisplayName("같은 날짜+시간이라도 테마가 다르면 각각 예약 가능하다")
     void 같은_시간_다른_테마는_각각_예약_가능() {
-        // 테마A에 10:00 예약
+        // 테마A에 예약
         Map<String, Object> first = new HashMap<>();
         first.put("date", FUTURE_DATE);
         first.put("timeId", timeId);
@@ -116,7 +133,7 @@ public class UserReservationStepTest extends IntegrationTest {
                 .statusCode(200)
                 .body("size()", is(1));
 
-        // 실제로 같은 (날짜, 시간)에 다른 테마로 예약 가능
+        // 같은 (날짜, 시간)에 다른 테마로 예약 가능
         Map<String, Object> second = new HashMap<>();
         second.put("date", FUTURE_DATE);
         second.put("timeId", timeId);

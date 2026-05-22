@@ -8,23 +8,39 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import roomescape.domain.exception.InvalidDomainException;
 
+/*
+ * [3단계 변경]
+ * - Theme.create / reconstitute 첫 번째 인수에 storeId(Long) 추가
+ * - VALID_STORE_ID 상수 추가 후 모든 호출부에 전달
+ * - storeId 자체 검증 테스트 추가 (storeId_null이면_예외)
+ */
 class ThemeTest {
 
-    private static final String VALID_NAME = "무인도 탈출";
+    private static final Long   VALID_STORE_ID  = 1L;
+    private static final String VALID_NAME        = "무인도 탈출";
     private static final String VALID_DESCRIPTION = "갯벌이 많은 무인도를 탈출하는 흥미진진 대탈출!";
-    private static final String VALID_THUMBNAIL = "https://picsum.photos/seed/roomescape1/800/600.jpg";
-
+    private static final String VALID_THUMBNAIL   = "https://picsum.photos/seed/roomescape1/800/600.jpg";
 
     @Test
     @DisplayName("새 테마를 생성할 수 있다.")
     void 새_테마를_생성할수_있다() {
-        assertDoesNotThrow(() -> Theme.create(VALID_NAME, VALID_DESCRIPTION, VALID_THUMBNAIL));
+        assertDoesNotThrow(() -> Theme.create(VALID_STORE_ID, VALID_NAME, VALID_DESCRIPTION, VALID_THUMBNAIL));
     }
 
     @Test
     @DisplayName("DB에서 재구성할 수 있다")
     void DB에서_재구성할_수_있다() {
-        assertDoesNotThrow(() -> Theme.reconstitute(1L, VALID_NAME, VALID_DESCRIPTION, VALID_THUMBNAIL));
+        assertDoesNotThrow(() -> Theme.reconstitute(1L, VALID_STORE_ID, VALID_NAME, VALID_DESCRIPTION, VALID_THUMBNAIL));
+    }
+
+    @Test
+    @DisplayName("storeId가 null이면 예외가 발생한다")
+    void storeId가_null이면_예외가_발생한다() {
+        InvalidDomainException exception = assertThrows(
+                InvalidDomainException.class,
+                () -> Theme.create(null, VALID_NAME, VALID_DESCRIPTION, VALID_THUMBNAIL)
+        );
+        assertEquals("테마의 매장 ID는 비어 있을 수 없습니다.", exception.getMessage());
     }
 
     @Test
@@ -32,7 +48,7 @@ class ThemeTest {
     void 이름이_null이면_예외가_발생한다() {
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create(null, VALID_DESCRIPTION, VALID_THUMBNAIL)
+                () -> Theme.create(VALID_STORE_ID, null, VALID_DESCRIPTION, VALID_THUMBNAIL)
         );
         assertEquals("테마 이름은 비어 있을 수 없습니다.", exception.getMessage());
     }
@@ -42,7 +58,7 @@ class ThemeTest {
     void 이름이_빈문자열이면_예외가_발생한다() {
         assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create("", VALID_DESCRIPTION, VALID_THUMBNAIL)
+                () -> Theme.create(VALID_STORE_ID, "", VALID_DESCRIPTION, VALID_THUMBNAIL)
         );
     }
 
@@ -51,7 +67,7 @@ class ThemeTest {
     void 이름이_공백만으로_이루어져_있으면_예외가_발생한다() {
         assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create("   ", VALID_DESCRIPTION, VALID_THUMBNAIL)
+                () -> Theme.create(VALID_STORE_ID, "   ", VALID_DESCRIPTION, VALID_THUMBNAIL)
         );
     }
 
@@ -61,7 +77,7 @@ class ThemeTest {
         String name = "탈".repeat(31);
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create(name, VALID_DESCRIPTION, VALID_THUMBNAIL)
+                () -> Theme.create(VALID_STORE_ID, name, VALID_DESCRIPTION, VALID_THUMBNAIL)
         );
         assertEquals("테마 이름은 30자를 초과할 수 없습니다.", exception.getMessage());
     }
@@ -71,7 +87,7 @@ class ThemeTest {
     void 설명이_null이면_예외가_발생한다() {
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create(VALID_NAME, null, VALID_THUMBNAIL)
+                () -> Theme.create(VALID_STORE_ID, VALID_NAME, null, VALID_THUMBNAIL)
         );
         assertEquals("테마 설명은 비어 있을 수 없습니다.", exception.getMessage());
     }
@@ -81,7 +97,7 @@ class ThemeTest {
     void 설명이_빈문자열이면_예외가_발생한다() {
         assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create(VALID_NAME, "", VALID_THUMBNAIL)
+                () -> Theme.create(VALID_STORE_ID, VALID_NAME, "", VALID_THUMBNAIL)
         );
     }
 
@@ -90,7 +106,7 @@ class ThemeTest {
     void 썸네일이_null이면_예외가_발생한다() {
         InvalidDomainException exception = assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create(VALID_NAME, VALID_DESCRIPTION, null)
+                () -> Theme.create(VALID_STORE_ID, VALID_NAME, VALID_DESCRIPTION, null)
         );
         assertEquals("테마 썸네일은 비어 있을 수 없습니다.", exception.getMessage());
     }
@@ -100,7 +116,7 @@ class ThemeTest {
     void 썸네일이_빈문자열이면_예외가_발생한다() {
         assertThrows(
                 InvalidDomainException.class,
-                () -> Theme.create(VALID_NAME, VALID_DESCRIPTION, "")
+                () -> Theme.create(VALID_STORE_ID, VALID_NAME, VALID_DESCRIPTION, "")
         );
     }
 }

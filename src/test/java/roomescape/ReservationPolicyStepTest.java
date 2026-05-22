@@ -25,17 +25,16 @@ import roomescape.support.ReservationTestHelper;
 import roomescape.support.TestFutureOnlyPolicy;
 
 /*
- * 서비스 정책 검증 테스트.
- *
- * IntegrationTest 상속으로 매 테스트 빈 DB 보장.
- * 고정 Clock(2026-05-13 12:00)을 주입해 "과거/현재/미래"의 의미를 결정적으로 만듦.
- * 각 @Nested 클래스가 정책 하나에 대응 — 정책이 늘어나면 @Nested가 늘어남.
+ * 예약 정책 통합 테스트.
  *
  * [1단계 변경]
- * - setUp()에 member 삽입 추가 — Command가 name → memberId로 바뀌었으므로
- * - 모든 ReservationCreateCommand 호출: ("브라운", ...) → (memberId, ...)
- * - InputValidationPolicy: 이름_null_거부 제거(name 필드 삭제), memberId_null_거부로 교체
- *   날짜/시간/테마 null 검증은 그대로 유지
+ * - setUp()에 member 삽입 추가
+ * - ReservationCreateCommand: name → memberId
+ * - InputValidationPolicy: 이름_null_거부 → memberId_null_거부
+ *
+ * [3단계 변경]
+ * - setUp(): insertStore() + insertTheme(storeId) 적용
+ * - 같은_날짜_시간이지만_테마가_다르면_허용: anotherThemeId도 동일 storeId 사용
  */
 public class ReservationPolicyStepTest extends IntegrationTest {
 
@@ -67,12 +66,14 @@ public class ReservationPolicyStepTest extends IntegrationTest {
     private Long memberId;
     private Long timeId10;
     private Long themeId;
+    private Long storeId;
 
     @BeforeEach
     void setUp() {
         memberId = helper.insertMember("test@test.com", "pass", "테스터");
         timeId10 = helper.insertTime(LocalTime.of(10, 0));
-        themeId = helper.insertTheme("테마A", "설명", "https://example.com/a.jpg");
+        storeId  = helper.insertStore("정책테스트매장");
+        themeId  = helper.insertTheme("테마A", "설명", "https://example.com/a.jpg", storeId);
     }
 
     // ──────── 과거 시점 예약 거부 ────────
@@ -153,7 +154,7 @@ public class ReservationPolicyStepTest extends IntegrationTest {
         @DisplayName("같은 날짜+시간이라도 테마가 다르면 허용된다")
         void 같은_날짜_시간이지만_테마가_다르면_허용() {
             LocalDate futureDate = TODAY.plusDays(1);
-            Long anotherThemeId = helper.insertTheme("테마B", "설명B", "https://example.com/b.jpg");
+            Long anotherThemeId = helper.insertTheme("테마B", "설명B", "https://example.com/b.jpg", storeId);
 
             reservationService.create(new ReservationCreateCommand(memberId, futureDate, timeId10, themeId));
 
@@ -232,7 +233,7 @@ public class ReservationPolicyStepTest extends IntegrationTest {
 
         @Test
         @DisplayName("시간 ID가 null이면 거부된다")
-        void 시간Id_null_거부() {
+        void 시간_null_거부() {
             assertThatThrownBy(() -> reservationService.create(new ReservationCreateCommand(
                     memberId, TODAY.plusDays(1), null, themeId
             )))
@@ -242,7 +243,7 @@ public class ReservationPolicyStepTest extends IntegrationTest {
 
         @Test
         @DisplayName("테마 ID가 null이면 거부된다")
-        void 테마Id_null_거부() {
+        void 테마_null_거부() {
             assertThatThrownBy(() -> reservationService.create(new ReservationCreateCommand(
                     memberId, TODAY.plusDays(1), timeId10, null
             )))
