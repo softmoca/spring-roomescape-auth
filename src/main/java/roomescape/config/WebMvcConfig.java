@@ -8,6 +8,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import roomescape.auth.AuthenticationExtractor;
 import roomescape.auth.LoginCheckInterceptor;
 import roomescape.auth.LoginMemberArgumentResolver;
+import roomescape.auth.ManagerCheckInterceptor;
+import roomescape.repository.ManagerRepository;
 import roomescape.service.MemberService;
 
 
@@ -16,6 +18,15 @@ import roomescape.service.MemberService;
  * - List<AuthenticationExtractor>를 생성자 주입받아 Interceptor · ArgumentResolver에 전달.
  * - Spring이 @Component 붙은 구현체(Session/Token)를 자동 수집해서 List로 주입.
  * - /api/login 경로를 excludePathPatterns에 추가 (모바일 로그인 엔드포인트).
+ *
+ *  * [변경점 — 3단계]
+ *  * - /admin/**를 excludePathPatterns에서 제거.
+ *  *   기존: /admin/**를 인증 체크 예외로 두어 누구나 접근 가능했음.
+ *  *   변경: ManagerCheckInterceptor가 /admin/**에 대해 매니저 역할을 확인.
+ *  * - ManagerCheckInterceptor 추가: /admin/** 진입 시 매니저 역할 거친 체.
+ *  *   인터셉터 순서: LoginCheckInterceptor → ManagerCheckInterceptor.
+ *  *   단, /admin/**는 LoginCheckInterceptor의 excludePathPatterns에 있으므로
+ *  *   LoginCheckInterceptor는 통과하고, ManagerCheckInterceptor가 독립적으로 인증+인가를 모두 확인.
  */
 
 @Configuration
@@ -23,13 +34,16 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     private final List<AuthenticationExtractor> extractors;
     private final MemberService memberService;
+    private final ManagerRepository managerRepository;
 
     public WebMvcConfig(
             List<AuthenticationExtractor> extractors,
-            MemberService memberService
+            MemberService memberService,
+            ManagerRepository managerRepository
     ) {
         this.extractors = extractors;
         this.memberService = memberService;
+        this.managerRepository = managerRepository;
     }
 
     // /**에 걸고 예외를 빼는 방식.
@@ -46,8 +60,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
                         "/logout",
                         "/user/themes",
                         "/user/themes/**",
-                        "/admin/**"   // 어드민은 별도 권한 체계 - 3단계에서 역할 기반 인가 추가 예정
+                        "/admin/**"   // ManagerCheckInterceptor가 별도로 처리
                 );
+
+        // 3단계 인가 인터셉터 — /admin/** 거친 체 (매니저 역할 확인)
+        // 세밀한 인가(자기 매장 예약인지)는 Service에서 처리
+        registry.addInterceptor(new ManagerCheckInterceptor(extractors, managerRepository))
+                .addPathPatterns("/admin/**");
+
     }
 
     @Override
