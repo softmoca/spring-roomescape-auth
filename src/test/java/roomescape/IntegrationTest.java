@@ -19,6 +19,14 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * - reservation이 member_id FK를 가지므로 reservation 먼저, member 나중에 삭제.
  * - data.sql의 시간/테마 시드가 매 컨텍스트 로드 시 삽입되므로 reservation_time, theme도 초기화.
  * - data.sql에서 회원 시드를 제거했으므로 member는 @BeforeEach에서 직접 삽입한다.
+ *
+ *  * [3단계 변경] store, manager 테이블 추가
+ *  *   - FK 삭제 순서: reservation → manager → member → reservation_time → theme → store
+ *  *   - manager.member_id → member, manager.store_id → store 참조하므로
+ *  *     manager를 member/store보다 먼저 삭제해야 한다.
+ *  *   - theme.store_id → store 참조하므로 theme을 store보다 먼저 삭제.
+ *
+ *
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class IntegrationTest {
@@ -40,14 +48,18 @@ public abstract class IntegrationTest {
         // reservation → member, reservation_time, theme 순서로 참조하므로
         // reservation을 가장 먼저 삭제해야 한다.
         jdbcTemplate.execute("DELETE FROM reservation");
+        jdbcTemplate.execute("DELETE FROM manager");          // 3단계 추가
         jdbcTemplate.execute("DELETE FROM member");          // 1단계 추가
         jdbcTemplate.execute("DELETE FROM reservation_time");
         jdbcTemplate.execute("DELETE FROM theme");
+        jdbcTemplate.execute("DELETE FROM store");            // 3단계 추가
 
         // AUTO_INCREMENT 리셋 (테스트가 ID 1부터 시작한다고 가정할 수 있도록)
         jdbcTemplate.execute("ALTER TABLE reservation ALTER COLUMN id RESTART WITH 1");
+        jdbcTemplate.execute("ALTER TABLE manager ALTER COLUMN id RESTART WITH 1");       // 3단계 추가
         jdbcTemplate.execute("ALTER TABLE member ALTER COLUMN id RESTART WITH 1");  // 1단계 추가
         jdbcTemplate.execute("ALTER TABLE reservation_time ALTER COLUMN id RESTART WITH 1");
         jdbcTemplate.execute("ALTER TABLE theme ALTER COLUMN id RESTART WITH 1");
+        jdbcTemplate.execute("ALTER TABLE store ALTER COLUMN id RESTART WITH 1");         // 3단계 추가
     }
 }
